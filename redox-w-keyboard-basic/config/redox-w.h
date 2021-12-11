@@ -23,6 +23,11 @@
 #define R04 14
 #define R05 13
 
+#define ENC_A 0
+#define ENC_B 30
+
+#define ENCODER_ENABLED 0
+
 #endif
 
 #ifdef COMPILE_RIGHT
@@ -42,6 +47,11 @@
 #define R03 23
 #define R04 28
 #define R05 29
+
+#define ENC_A 9
+#define ENC_B 10
+
+#define ENCODER_ENABLED 1
 
 #endif
 

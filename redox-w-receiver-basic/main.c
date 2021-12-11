@@ -22,9 +22,13 @@
 
 
 // Define payload length
-#define PAYLOAD_LENGTH 5 ///< 5 byte payload length
+#define ROW 5
+#define PAYLOAD_LENGTH (ROW + 1) ///< 6 byte payload length
 
-#define MATRIX_ROWS 10
+#define MATRIX_ROWS (ROW * 2)
+
+// Number if pulse for a single increment
+#define ENC_RESOLUTION 1
 
 // ticks for inactive keyboard
 // Binary printing
@@ -96,6 +100,8 @@ int main(void)
     nrf_gzll_enable();
 
     uint8_t matrix[MATRIX_ROWS] = {0};
+    int8_t encoder_pulse[2] = {0};
+    int8_t encoder_value[2] = {0};
 
     // main loop
     while (true)
@@ -109,9 +115,20 @@ int main(void)
             uint8_t payload[PAYLOAD_LENGTH];
             bool ret = nrf_gzll_fetch_packet_from_rx_fifo(pipe, payload, &payload_len);
             if (ret && payload_len == PAYLOAD_LENGTH) {
-                for (int i = 0; i < PAYLOAD_LENGTH; i++) {
+                for (int i = 0; i < ROW; i++) {
                     matrix[i * 2 + pipe] = payload[i];
                 }
+
+                encoder_pulse[pipe] += payload[PAYLOAD_LENGTH - 1];
+                if (encoder_pulse[pipe] >= ENC_RESOLUTION)
+                {
+                    encoder_value[pipe]++;
+                }
+                if (encoder_pulse[pipe] <= -ENC_RESOLUTION)
+                {
+                    encoder_value[pipe]--;
+                }
+                encoder_pulse[pipe] %= ENC_RESOLUTION;
             }
         }
 
@@ -120,7 +137,9 @@ int main(void)
         if (app_uart_get(&c) == NRF_SUCCESS && c == 's')
         {
             // sending data to QMK, and an end byte
-            nrf_drv_uart_tx(matrix, 10);
+            nrf_drv_uart_tx(matrix, MATRIX_ROWS);
+            app_uart_put((uint8_t)encoder_value[0]);
+            app_uart_put((uint8_t)encoder_value[1]);
             app_uart_put(0xE0);
 
             // debugging help, for printing keystates to a serial console
@@ -133,12 +152,14 @@ int main(void)
                    BYTE_TO_BINARY_PATTERN " " \
                    BYTE_TO_BINARY_PATTERN " " \
                    BYTE_TO_BINARY_PATTERN " " \
-                   BYTE_TO_BINARY_PATTERN "\r\n", \
-                   BYTE_TO_BINARY(data_payload_left[0]), \
-                   BYTE_TO_BINARY(data_payload_left[1]), \
-                   BYTE_TO_BINARY(data_payload_left[2]), \
-                   BYTE_TO_BINARY(data_payload_left[3]), \
-                   BYTE_TO_BINARY(data_payload_left[4]));
+                   BYTE_TO_BINARY_PATTERN " "\
+                   "encL %d encR %d" "\r\n", \
+                   BYTE_TO_BINARY(matrix[0]), \
+                   BYTE_TO_BINARY(matrix[1]), \
+                   BYTE_TO_BINARY(matrix[2]), \
+                   BYTE_TO_BINARY(matrix[3]), \
+                   BYTE_TO_BINARY(matrix[4]), \
+                   encoder_value[0], encoder_value[1]);
             nrf_delay_us(100);
             */
         }

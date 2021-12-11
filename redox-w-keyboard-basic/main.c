@@ -26,13 +26,14 @@ static uint8_t ack_payload[NRF_GZLL_CONST_MAX_PAYLOAD_LENGTH]; ///< Placeholder 
 // Debounce time (dependent on tick frequency)
 #define DEBOUNCE 5
 // Mark as inactive after a number of ticks:
-#define INACTIVITY_THRESHOLD 500 // 0.5sec
+#define KEY_INACTIVITY_THRESHOLD 500 // 0.5sec
+#define ENC_INACTIVITY_THRESHOLD 3000 // 3sec
 
 #ifdef COMPILE_LEFT
-static uint8_t channel_table[3]={4, 42, 77};
+static uint8_t channel_table[3] = {4, 42, 77};
 #endif
 #ifdef COMPILE_RIGHT
-static uint8_t channel_table[3]={25, 63, 33};
+static uint8_t channel_table[3] = {25, 63, 33};
 #endif
 
 // Setup switch pins with pullups
@@ -44,6 +45,13 @@ static void gpio_config(void)
     nrf_gpio_cfg_sense_input(R04, NRF_GPIO_PIN_PULLDOWN, NRF_GPIO_PIN_SENSE_HIGH);
     nrf_gpio_cfg_sense_input(R05, NRF_GPIO_PIN_PULLDOWN, NRF_GPIO_PIN_SENSE_HIGH);
 
+    #ifdef ENCODER_ENABLED
+    nrf_gpio_cfg_input(ENC_A, NRF_GPIO_PIN_PULLUP);
+    nrf_gpio_cfg_input(ENC_B, NRF_GPIO_PIN_PULLUP);
+    #endif
+    // nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
+    // nrf_gpio_cfg_sense_input(ENC_B, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
+
     nrf_gpio_cfg_output(C01);
     nrf_gpio_cfg_output(C02);
     nrf_gpio_cfg_output(C03);
@@ -51,6 +59,7 @@ static void gpio_config(void)
     nrf_gpio_cfg_output(C05);
     nrf_gpio_cfg_output(C06);
     nrf_gpio_cfg_output(C07);
+    
 
     nrf_gpio_pin_clear(C01);
     nrf_gpio_pin_clear(C02);
@@ -91,6 +100,41 @@ static void read_keys(uint8_t *row_stat)
 
 }
 
+struct Encoder
+{
+    uint8_t state;
+    int16_t pulse;
+};
+
+
+static int8_t read_encoder(uint8_t* enc_state)
+{
+    static const int8_t encoder_LUT[] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
+
+    bool changed = false;
+
+    *enc_state <<= 2;
+    const uint32_t input = NRF_GPIO->IN;
+    *enc_state |= (((input >> ENC_A) & 1) << 0) | (((input >> ENC_B) & 1) << 1);
+
+    return encoder_LUT[*enc_state & 0xF];
+    // enc->pulse += encoder_LUT[enc->state & 0xF];
+    // if (enc->pulse >= ENC_RESOLUTION)
+    // {
+    //     (*enc_value)++;
+    //     changed = true;
+    //     // encoder_update_kb(index, ENCODER_COUNTER_CLOCKWISE);
+    // }
+    // if (enc->pulse <= -ENC_RESOLUTION)
+    // {
+    //     (*enc_value)--;
+    //     changed = true;
+    //     // encoder_update_kb(index, ENCODER_CLOCKWISE);
+    // }
+    // enc->pulse %= ENC_RESOLUTION;
+    // return changed;
+}
+
 static bool compare_keys(const uint8_t* first, const uint8_t* second,
                          uint32_t size)
 {
@@ -116,52 +160,84 @@ static bool empty_keys(const uint8_t* keys_buffer)
     return true;
 }
 
-static void handle_inactivity(const uint8_t *keys_buffer)
+static void handle_inactivity(const uint8_t *keys_buffer, const bool has_enc_change)
 {
-    static uint32_t inactivity_ticks = 0;
+    static uint32_t key_inactivity_ticks = 0;
+    static uint32_t enc_inactivity_ticks = 0;
 
-    // looking for 500 ticks of no keys pressed, to go back to deep sleep
+    // looking for 500 ticks of no keys pressed or 5000 ticks of no encoder, to go back to deep sleep
     if (empty_keys(keys_buffer)) {
-        inactivity_ticks++;
-        if (inactivity_ticks > INACTIVITY_THRESHOLD) {
-            nrf_drv_rtc_disable(&rtc);
-            nrf_gpio_pin_set(C01);
-            nrf_gpio_pin_set(C02);
-            nrf_gpio_pin_set(C03);
-            nrf_gpio_pin_set(C04);
-            nrf_gpio_pin_set(C05);
-            nrf_gpio_pin_set(C06);
-            nrf_gpio_pin_set(C07);
-
-            inactivity_ticks = 0;
-
-            NRF_POWER->SYSTEMOFF = 1;
-        }
+        key_inactivity_ticks++;
     } else {
-        inactivity_ticks = 0;
+        key_inactivity_ticks = 0;
+    }
+    if (!has_enc_change)
+    {
+        enc_inactivity_ticks++;
+    }
+    else
+    {
+        enc_inactivity_ticks = 0;
+    }
+    #ifdef ENCODER_ENABLED
+    if (key_inactivity_ticks > KEY_INACTIVITY_THRESHOLD && enc_inactivity_ticks > ENC_INACTIVITY_THRESHOLD) {
+    #else
+    if (key_inactivity_ticks > KEY_INACTIVITY_THRESHOLD) {
+    #endif
+        nrf_drv_rtc_disable(&rtc);
+        nrf_gpio_pin_set(C01);
+        nrf_gpio_pin_set(C02);
+        nrf_gpio_pin_set(C03);
+        nrf_gpio_pin_set(C04);
+        nrf_gpio_pin_set(C05);
+        nrf_gpio_pin_set(C06);
+        nrf_gpio_pin_set(C07);
+
+        // Sense if the the value changes
+
+        #ifdef ENCODER_ENABLED
+        const uint32_t input = NRF_GPIO->IN;
+        nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, ((input >> ENC_A) & 1) ? NRF_GPIO_PIN_SENSE_LOW : NRF_GPIO_PIN_SENSE_HIGH);
+        nrf_gpio_cfg_sense_input(ENC_B, NRF_GPIO_PIN_PULLUP, ((input >> ENC_B) & 1) ? NRF_GPIO_PIN_SENSE_LOW : NRF_GPIO_PIN_SENSE_HIGH);
+        #endif
+        key_inactivity_ticks = 0;
+        enc_inactivity_ticks = 0;
+
+        NRF_POWER->SYSTEMOFF = 1;
     }
 }
 
-static void handle_send(const uint8_t* keys_buffer)
+struct OutBuffer
 {
-    static uint8_t keys_snapshot[ROWS] = {0};
+    uint8_t keys_snapshot[ROWS];
+    int8_t enc_delta;
+} __attribute__((packed));
+
+static void handle_send(const uint8_t* keys_buffer, const int8_t enc_delta)
+{
+    static struct OutBuffer out_buffer = {.keys_snapshot = {0}, .enc_delta = 0};
     static uint32_t debounce_ticks = 0;
 
-    const bool no_change = compare_keys(keys_buffer, keys_snapshot, ROWS);
-    if (no_change) {
+    const bool key_no_change = compare_keys(keys_buffer, out_buffer.keys_snapshot, ROWS);
+    out_buffer.enc_delta = enc_delta;
+    if (out_buffer.enc_delta != 0) {
+        // Assemble packet and send to receiver
+        nrf_gzll_add_packet_to_tx_fifo(PIPE_NUMBER, (uint8_t*)(void *)&out_buffer, ROWS + 1);
+    }
+    else if (key_no_change) {
         debounce_ticks++;
         // debouncing - send only if the keys state has been stable
         // for DEBOUNCE ticks
         if (debounce_ticks == DEBOUNCE) {
             // Assemble packet and send to receiver
-            nrf_gzll_add_packet_to_tx_fifo(PIPE_NUMBER, keys_snapshot, ROWS);
+            nrf_gzll_add_packet_to_tx_fifo(PIPE_NUMBER, (uint8_t*)(void *)&out_buffer, ROWS + 1);
             debounce_ticks = 0;
         }
     } else {
         // change detected, start over
         debounce_ticks = 0;
         for (int k = 0; k < ROWS; k++) {
-            keys_snapshot[k] = keys_buffer[k];
+            out_buffer.keys_snapshot[k] = keys_buffer[k];
         }
     }
 }
@@ -169,12 +245,25 @@ static void handle_send(const uint8_t* keys_buffer)
 // 1000Hz debounce sampling
 static void tick(nrf_drv_rtc_int_type_t int_type)
 {
+
     uint8_t keys_buffer[ROWS] = {0, 0, 0, 0, 0};
     read_keys(keys_buffer);
 
-    handle_inactivity(keys_buffer);
 
-    handle_send(keys_buffer);
+    #ifdef ENCODER_ENABLED
+    static uint8_t enc_state = 142;
+    if (enc_state == 142)
+    {
+        enc_state = 0;
+        read_encoder(&enc_state);
+    }
+    const int8_t enc_delta = read_encoder(&enc_state);
+    #else
+    const int8_t enc_delta = 0;
+    #endif
+    handle_inactivity(keys_buffer, enc_delta != 0);
+
+    handle_send(keys_buffer, enc_delta);
 }
 
 // Low frequency clock configuration
