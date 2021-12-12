@@ -46,11 +46,11 @@ static void gpio_config(void)
     nrf_gpio_cfg_sense_input(R05, NRF_GPIO_PIN_PULLDOWN, NRF_GPIO_PIN_SENSE_HIGH);
 
     #ifdef ENCODER_ENABLED
-    nrf_gpio_cfg_input(ENC_A, NRF_GPIO_PIN_PULLUP);
-    nrf_gpio_cfg_input(ENC_B, NRF_GPIO_PIN_PULLUP);
+    // nrf_gpio_cfg_input(ENC_A, NRF_GPIO_PIN_PULLUP);
+    // nrf_gpio_cfg_input(ENC_B, NRF_GPIO_PIN_PULLUP);
+    nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, nrf_gpio_pin_sense_get(ENC_A));
+    nrf_gpio_cfg_sense_input(ENC_B, NRF_GPIO_PIN_PULLUP, nrf_gpio_pin_sense_get(ENC_B));
     #endif
-    // nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
-    // nrf_gpio_cfg_sense_input(ENC_B, NRF_GPIO_PIN_PULLUP, NRF_GPIO_PIN_SENSE_LOW);
 
     nrf_gpio_cfg_output(C01);
     nrf_gpio_cfg_output(C02);
@@ -109,7 +109,26 @@ struct Encoder
 
 static int8_t read_encoder(uint8_t* enc_state)
 {
-    static const int8_t encoder_LUT[] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
+    static const int8_t encoder_LUT[] = 
+    {
+        //       BA BA
+        0,    // 00 00 => no change 
+        -1,   // 00 01 => anti clockwise  
+        1,    // 00 10 => clockwise
+        20,    // 00 11 => invalid
+        1,    // 01 00 => clockwise
+        0,    // 01 01 => same
+        20,    // 01 10 => invalid
+        -1,   // 01 11 => anti clockwise
+        -1,   // 10 00 => anti clockwise
+        20,    // 10 01 => invalid
+        0,    // 10 10 => same
+        1,    // 10 11 => clockwise
+        20,    // 11 00 => invalid
+        1,    // 11 01 => clockwise
+        -1,   // 11 10 => anti clockwise
+        0     // 11 11 => same
+    };
 
     bool changed = false;
 
@@ -168,7 +187,9 @@ static void handle_inactivity(const uint8_t *keys_buffer, const bool has_enc_cha
     // looking for 500 ticks of no keys pressed or 5000 ticks of no encoder, to go back to deep sleep
     if (empty_keys(keys_buffer)) {
         key_inactivity_ticks++;
-    } else {
+    }
+    else
+    {
         key_inactivity_ticks = 0;
     }
     if (!has_enc_change)
@@ -255,7 +276,20 @@ static void tick(nrf_drv_rtc_int_type_t int_type)
     if (enc_state == 142)
     {
         enc_state = 0;
-        read_encoder(&enc_state);
+
+        // On reset all information about the state is lost, therefore, we need to infer it from the config of the GPIO sense registers
+        const nrf_gpio_pin_sense_t enc_a_sense = nrf_gpio_pin_sense_get(ENC_A);
+        const nrf_gpio_pin_sense_t enc_b_sense = nrf_gpio_pin_sense_get(ENC_B);
+
+        // If first reset, read the current encoder value
+        if (enc_a_sense == NRF_GPIO_PIN_NOSENSE && enc_b_sense == NRF_GPIO_PIN_NOSENSE)
+        {
+            read_encoder(&enc_state);
+        }
+        else
+        {
+            enc_state |= (enc_a_sense == NRF_GPIO_PIN_SENSE_LOW ? 1 : 0) | ((enc_b_sense == NRF_GPIO_PIN_SENSE_LOW ? 1 : 0) << 1);
+        }
     }
     const int8_t enc_delta = read_encoder(&enc_state);
     #else
