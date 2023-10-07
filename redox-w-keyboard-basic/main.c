@@ -109,7 +109,7 @@ struct Encoder
 
 static int8_t read_encoder(uint8_t* enc_state)
 {
-    static const int8_t encoder_LUT[] = 
+    static const int8_t encoder_LUT[] =
     {
         //       BA BA
         0,    // 00 00 => no change 
@@ -136,22 +136,17 @@ static int8_t read_encoder(uint8_t* enc_state)
     const uint32_t input = NRF_GPIO->IN;
     *enc_state |= (((input >> ENC_A) & 1) << 0) | (((input >> ENC_B) & 1) << 1);
 
-    return encoder_LUT[*enc_state & 0xF];
-    // enc->pulse += encoder_LUT[enc->state & 0xF];
-    // if (enc->pulse >= ENC_RESOLUTION)
-    // {
-    //     (*enc_value)++;
-    //     changed = true;
-    //     // encoder_update_kb(index, ENCODER_COUNTER_CLOCKWISE);
-    // }
-    // if (enc->pulse <= -ENC_RESOLUTION)
-    // {
-    //     (*enc_value)--;
-    //     changed = true;
-    //     // encoder_update_kb(index, ENCODER_CLOCKWISE);
-    // }
-    // enc->pulse %= ENC_RESOLUTION;
-    // return changed;
+    const int8_t delta = encoder_LUT[*enc_state & 0xF];
+
+     // Caught an invalid change
+    if (delta == 20)
+    {
+        return 0;
+    }
+    else
+    {
+        return delta;
+    }
 }
 
 static bool compare_keys(const uint8_t* first, const uint8_t* second,
@@ -266,15 +261,15 @@ static void handle_send(const uint8_t* keys_buffer, const int8_t enc_delta)
 // 1000Hz debounce sampling
 static void tick(nrf_drv_rtc_int_type_t int_type)
 {
-
     uint8_t keys_buffer[ROWS] = {0, 0, 0, 0, 0};
     read_keys(keys_buffer);
 
-
-    #ifdef ENCODER_ENABLED
-    static uint8_t enc_state = 142;
-    if (enc_state == 142)
+#ifdef ENCODER_ENABLED
+    static bool initialized = false;
+    static uint8_t enc_state = 0;
+    if (!initialized)
     {
+        initialized = true;
         enc_state = 0;
 
         // On reset all information about the state is lost, therefore, we need to infer it from the config of the GPIO sense registers
@@ -292,9 +287,9 @@ static void tick(nrf_drv_rtc_int_type_t int_type)
         }
     }
     const int8_t enc_delta = read_encoder(&enc_state);
-    #else
+#else
     const int8_t enc_delta = 0;
-    #endif
+#endif
     handle_inactivity(keys_buffer, enc_delta != 0);
 
     handle_send(keys_buffer, enc_delta);
