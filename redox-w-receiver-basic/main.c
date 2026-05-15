@@ -30,6 +30,9 @@
 // Number if pulse for a single increment
 #define ENC_RESOLUTION 1
 
+// Approximate 30-second timeout for stale matrix rows when a keyboard half is silent
+#define INACTIVITY_TIMEOUT_LOOPS 600000
+
 // ticks for inactive keyboard
 // Binary printing
 #define BYTE_TO_BINARY_PATTERN "%c%c%c%c%c%c%c%c"
@@ -102,12 +105,20 @@ int main(void)
     uint8_t matrix[MATRIX_ROWS] = {0};
     int8_t encoder_pulse[2] = {0};
     int8_t encoder_value[2] = {0};
+    uint32_t pipe_last_packet[2] = {0, 0};
 
     // main loop
     while (true)
     {
         for (int pipe = 0; pipe < 2; pipe++) {
             if (!nrf_gzll_get_rx_fifo_packet_count(pipe)) {
+                pipe_last_packet[pipe]++;
+                if (pipe_last_packet[pipe] >= INACTIVITY_TIMEOUT_LOOPS) {
+                    pipe_last_packet[pipe] = INACTIVITY_TIMEOUT_LOOPS;
+                    for (int i = 0; i < ROW; i++) {
+                        matrix[i * 2 + pipe] = 0;
+                    }
+                }
                 continue;
             }
 
@@ -115,6 +126,7 @@ int main(void)
             uint8_t payload[PAYLOAD_LENGTH];
             bool ret = nrf_gzll_fetch_packet_from_rx_fifo(pipe, payload, &payload_len);
             if (ret && payload_len == PAYLOAD_LENGTH) {
+                pipe_last_packet[pipe] = 0;
                 for (int i = 0; i < ROW; i++) {
                     matrix[i * 2 + pipe] = payload[i];
                 }
