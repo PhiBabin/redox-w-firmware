@@ -122,39 +122,42 @@ int main(void)
                 continue;
             }
 
-            uint32_t payload_len = PAYLOAD_LENGTH;
-            uint8_t payload[PAYLOAD_LENGTH];
-            bool ret = nrf_gzll_fetch_packet_from_rx_fifo(pipe, payload, &payload_len);
-            if (ret && payload_len == PAYLOAD_LENGTH) {
-                pipe_last_packet[pipe] = 0;
-                for (int i = 0; i < ROW; i++) {
-                    matrix[i * 2 + pipe] = payload[i];
-                }
+            pipe_last_packet[pipe] = 0;
+            while (nrf_gzll_get_rx_fifo_packet_count(pipe)) {
+                uint32_t payload_len = PAYLOAD_LENGTH;
+                uint8_t payload[PAYLOAD_LENGTH];
+                bool ret = nrf_gzll_fetch_packet_from_rx_fifo(pipe, payload, &payload_len);
+                if (ret && payload_len == PAYLOAD_LENGTH) {
+                    for (int i = 0; i < ROW; i++) {
+                        matrix[i * 2 + pipe] = payload[i];
+                    }
 
-                encoder_pulse[pipe] += payload[PAYLOAD_LENGTH - 1];
-                if (encoder_pulse[pipe] >= ENC_RESOLUTION)
-                {
-                    encoder_value[pipe]++;
+                    encoder_pulse[pipe] += payload[PAYLOAD_LENGTH - 1];
+                    if (encoder_pulse[pipe] >= ENC_RESOLUTION)
+                    {
+                        encoder_value[pipe]++;
+                    }
+                    if (encoder_pulse[pipe] <= -ENC_RESOLUTION)
+                    {
+                        encoder_value[pipe]--;
+                    }
+                    encoder_pulse[pipe] %= ENC_RESOLUTION;
                 }
-                if (encoder_pulse[pipe] <= -ENC_RESOLUTION)
-                {
-                    encoder_value[pipe]--;
-                }
-                encoder_pulse[pipe] %= ENC_RESOLUTION;
             }
         }
-        // Compute checksum before waiting for uart
-        uint8_t checksum = 0;
-        for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
-            checksum ^= matrix[i];
-        }
-        checksum ^= (uint8_t)encoder_value[0];
-        checksum ^= (uint8_t)encoder_value[1];
 
         // checking for a poll request from QMK
         uint8_t c;
         if (app_uart_get(&c) == NRF_SUCCESS && c == 's')
         {
+            // Compute checksum before waiting for uart
+            uint8_t checksum = 0;
+            for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
+                checksum ^= matrix[i];
+            }
+            checksum ^= (uint8_t)encoder_value[0];
+            checksum ^= (uint8_t)encoder_value[1];
+
             // sending data to QMK: start sentinel + data + checksum
             app_uart_put(0xE0);
             for (uint8_t i = 0; i < MATRIX_ROWS; i++) {

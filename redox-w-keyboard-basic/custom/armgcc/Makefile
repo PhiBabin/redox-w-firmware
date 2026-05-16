@@ -1,4 +1,4 @@
-PROJECT_NAME := redow-w-keyboard-basic
+PROJECT_NAME := redox-w-keyboard-basic
 
 export OUTPUT_FILENAME
 

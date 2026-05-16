@@ -100,11 +100,7 @@ static void read_keys(uint8_t *row_stat)
 
 }
 
-struct Encoder
-{
-    uint8_t state;
-    int16_t pulse;
-};
+
 
 #if ENCODER_ENABLED
 static uint8_t enc_state = 0;
@@ -133,8 +129,6 @@ static int8_t read_encoder(uint8_t* enc_state)
         -1,   // 11 10 => anti clockwise
         0     // 11 11 => same
     };
-
-    bool changed = false;
 
     *enc_state <<= 2;
     const uint32_t input = NRF_GPIO->IN;
