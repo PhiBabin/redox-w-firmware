@@ -143,18 +143,27 @@ int main(void)
                 encoder_pulse[pipe] %= ENC_RESOLUTION;
             }
         }
+        // Compute checksum before waiting for uart
+        uint8_t checksum = 0;
+        for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
+            checksum ^= matrix[i];
+        }
+        checksum ^= (uint8_t)encoder_value[0];
+        checksum ^= (uint8_t)encoder_value[1];
 
         // checking for a poll request from QMK
         uint8_t c;
         if (app_uart_get(&c) == NRF_SUCCESS && c == 's')
         {
-            // sending data to QMK, and an end byte
+            // sending data to QMK: start sentinel + data + checksum
+            app_uart_put(0xE0);
             for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
                 app_uart_put(matrix[i]);
             }
             app_uart_put((uint8_t)encoder_value[0]);
             app_uart_put((uint8_t)encoder_value[1]);
-            app_uart_put(0xE0);
+
+            app_uart_put(checksum);
 
             // debugging help, for printing keystates to a serial console
             /*

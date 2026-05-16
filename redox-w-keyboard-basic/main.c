@@ -45,7 +45,7 @@ static void gpio_config(void)
     nrf_gpio_cfg_sense_input(R04, NRF_GPIO_PIN_PULLDOWN, NRF_GPIO_PIN_SENSE_HIGH);
     nrf_gpio_cfg_sense_input(R05, NRF_GPIO_PIN_PULLDOWN, NRF_GPIO_PIN_SENSE_HIGH);
 
-    #ifdef ENCODER_ENABLED
+    #if ENCODER_ENABLED
     // nrf_gpio_cfg_input(ENC_A, NRF_GPIO_PIN_PULLUP);
     // nrf_gpio_cfg_input(ENC_B, NRF_GPIO_PIN_PULLUP);
     nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, nrf_gpio_pin_sense_get(ENC_A));
@@ -106,7 +106,7 @@ struct Encoder
     int16_t pulse;
 };
 
-#ifdef ENCODER_ENABLED
+#if ENCODER_ENABLED
 static uint8_t enc_state = 0;
 static bool enc_initialized = false;
 #endif
@@ -199,7 +199,7 @@ static void handle_inactivity(const uint8_t *keys_buffer, const bool has_enc_cha
     {
         enc_inactivity_ticks = 0;
     }
-    #ifdef ENCODER_ENABLED
+    #if ENCODER_ENABLED
     if (key_inactivity_ticks > KEY_INACTIVITY_THRESHOLD && enc_inactivity_ticks > ENC_INACTIVITY_THRESHOLD) {
     #else
     if (key_inactivity_ticks > KEY_INACTIVITY_THRESHOLD) {
@@ -215,7 +215,7 @@ static void handle_inactivity(const uint8_t *keys_buffer, const bool has_enc_cha
 
         // Sense if the the value changes
 
-        #ifdef ENCODER_ENABLED
+        #if ENCODER_ENABLED
         const uint32_t input = NRF_GPIO->IN;
         nrf_gpio_cfg_sense_input(ENC_A, NRF_GPIO_PIN_PULLUP, ((input >> ENC_A) & 1) ? NRF_GPIO_PIN_SENSE_LOW : NRF_GPIO_PIN_SENSE_HIGH);
         nrf_gpio_cfg_sense_input(ENC_B, NRF_GPIO_PIN_PULLUP, ((input >> ENC_B) & 1) ? NRF_GPIO_PIN_SENSE_LOW : NRF_GPIO_PIN_SENSE_HIGH);
@@ -271,7 +271,7 @@ static void tick(nrf_drv_rtc_int_type_t int_type)
     uint8_t keys_buffer[ROWS] = {0, 0, 0, 0, 0};
     read_keys(keys_buffer);
 
-#ifdef ENCODER_ENABLED
+#if ENCODER_ENABLED
     if (!enc_initialized)
     {
         enc_initialized = true;
