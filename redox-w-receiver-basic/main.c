@@ -149,7 +149,9 @@ int main(void)
         if (app_uart_get(&c) == NRF_SUCCESS && c == 's')
         {
             // sending data to QMK, and an end byte
-            nrf_drv_uart_tx(matrix, MATRIX_ROWS);
+            for (uint8_t i = 0; i < MATRIX_ROWS; i++) {
+                app_uart_put(matrix[i]);
+            }
             app_uart_put((uint8_t)encoder_value[0]);
             app_uart_put((uint8_t)encoder_value[1]);
             app_uart_put(0xE0);

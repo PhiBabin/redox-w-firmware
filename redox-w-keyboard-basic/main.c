@@ -301,13 +301,42 @@ static void tick(nrf_drv_rtc_int_type_t int_type)
 #endif
 
 #ifdef ENCODER_DEBOUNCE
-    static int8_t pending_enc_delta = 0;
+    // Directional debounce for mechanical encoders (e.g. 20 PPR).
+    // - A single reversed tick is swallowed.
+    // - Direction flips only after two consecutive ticks in the new direction.
+    // - Idle for >10 ms clears direction memory so slow turns still work.
+    static int8_t enc_dir = 0;            // running direction: -1, 0, +1
+    static uint8_t enc_dir_count = 0;     // consecutive ticks in that dir
+    static uint8_t enc_idle = 0;          // ms since last non-zero tick
+
     int8_t enc_delta = 0;
-    if (raw_enc_delta != 0 && raw_enc_delta == pending_enc_delta) {
-        enc_delta = raw_enc_delta;
-        pending_enc_delta = 0;
+    if (raw_enc_delta != 0) {
+        if (raw_enc_delta == enc_dir) {
+            // Same direction as before: accept immediately
+            enc_delta = raw_enc_delta;
+            enc_dir_count++;
+        } else if (enc_dir_count >= 2) {
+            // New direction, but we've already seen two+ ticks of it
+            enc_dir = raw_enc_delta;
+            enc_dir_count = 1;
+            enc_delta = raw_enc_delta;
+        } else if (enc_dir == 0) {
+            // First movement after idle: tentatively adopt it
+            enc_dir = raw_enc_delta;
+            enc_dir_count = 1;
+        } else {
+            // Single reversed tick -> reject
+        }
+        enc_idle = 0;
     } else {
-        pending_enc_delta = raw_enc_delta;
+        if (enc_idle < 11) {  // cap at 11 to prevent overflow
+            enc_idle++;
+        }
+        if (enc_idle > 10) {
+            // No movement for 10 ms: clear direction memory
+            enc_dir = 0;
+            enc_dir_count = 0;
+        }
     }
 #else
     const int8_t enc_delta = raw_enc_delta;
